@@ -375,6 +375,396 @@ const nextConfig: NextConfig = {};
 
 对于已有项目迁移，需要评估迁移成本和团队技术栈匹配度。
 
+## 服务端组件 vs 客户端组件
+
+### 核心概念对比
+
+Next.js App Router引入了React Server Components（RSC），这是理解现代Next.js架构的关键。
+
+| 特性 | 服务端组件 (默认) | 客户端组件 (use client) |
+|------|-------------------|------------------------|
+| **运行环境** | 仅在服务器上执行 | 服务器预渲染 + 浏览器执行 |
+| **JavaScript包** | 不发送到客户端 | 发送到客户端 |
+| **数据获取** | 直接访问后端资源 | 需要通过API |
+| **交互性** | 无法使用hooks和事件 | 完整的React交互功能 |
+| **声明方式** | 默认，无需声明 | 文件顶部添加 "use client" |
+| **性能影响** | 减少客户端包大小 | 增加客户端包大小 |
+
+### 服务端组件特点
+
+**文件路径**: `src/app/page.tsx` (当前项目中的所有组件都是服务端组件)
+
+**优势**:
+- **零客户端JavaScript**: 不会增加客户端包大小
+- **直接数据访问**: 可以直接访问数据库、文件系统等后端资源
+- **安全性**: API密钥等敏感信息不会暴露给客户端
+- **SEO友好**: 完整的HTML直接发送给浏览器
+
+**限制**:
+- 不能使用 `useState`, `useEffect` 等React hooks
+- 不能使用浏览器API (如 `window`, `document`)
+- 不能添加事件监听器 (如 `onClick`, `onChange`)
+- 不能使用React Context
+
+**典型代码示例**:
+```typescript
+// src/app/page.tsx - 服务端组件 (默认)
+export default function Home() {
+  // 这是一个纯展示组件，没有交互
+  return (
+    <div className="flex min-h-screen items-center justify-center">
+      <h1>你好，世界</h1>
+    </div>
+  );
+}
+```
+
+### 客户端组件特点
+
+**声明方式**: 在文件顶部添加 `"use client"` 指令
+
+**使用场景**:
+- 需要使用React hooks (useState, useEffect等)
+- 需要处理用户交互 (点击、输入等事件)
+- 需要使用浏览器API
+- 需要使用第三方交互式库
+
+**示例代码**:
+```typescript
+// 如果需要添加交互功能，可以创建 src/app/counter.tsx
+"use client"; // 客户端组件声明
+
+import { useState } from "react";
+
+export default function Counter() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={() => setCount(count + 1)}>
+        Increment
+      </button>
+    </div>
+  );
+}
+```
+
+### 组件混合使用策略
+
+**最佳实践**: 服务端组件为主，客户端组件按需使用
+
+```typescript
+// src/app/page.tsx - 服务端组件
+import Counter from "./counter"; // 客户端组件
+
+export default function Home() {
+  // 服务端组件可以包含客户端组件
+  return (
+    <div>
+      <h1>你好，世界</h1>
+      <Counter /> {/* 客户端组件嵌入 */}
+    </div>
+  );
+}
+```
+
+**关键原则**:
+1. **服务端组件可以导入客户端组件**
+2. **客户端组件不能导入服务端组件**（但可以通过props.children传递）
+3. **尽可能多用服务端组件**，减少客户端JavaScript
+
+### 文件路径映射
+
+| 组件类型 | 声明方式 | 示例路径 |
+|---------|---------|----------|
+| 服务端组件 | 默认（无需声明） | `src/app/page.tsx` |
+| 客户端组件 | `"use client"` | `src/app/counter.tsx` (示例) |
+| 共享组件 | 根据需要选择 | `src/components/**/*.tsx` |
+
+### 调试技巧
+
+**识别组件类型**:
+- 查看文件顶部是否有 `"use client"`
+- 如果没有，默认就是服务端组件
+- 使用 `console.log` 时：
+  - 服务端组件的日志出现在终端
+  - 客户端组件的日志出现在浏览器控制台
+
+## 数据获取方式
+
+### App Router数据获取模式
+
+Next.js App Router彻底简化了数据获取流程，不再需要 `getServerSideProps` 或 `getStaticProps`。
+
+### 服务端组件中的数据获取
+
+**核心特点**: 直接使用 `async/await` 语法
+
+```typescript
+// src/app/posts/page.tsx - 示例：博客文章列表页
+async function getPosts() {
+  // 可以直接访问数据库、文件系统或调用API
+  const res = await fetch('https://api.example.com/posts', {
+    // Next.js 16 默认缓存策略
+    cache: 'force-cache' // 等同于旧版的 getStaticProps
+  });
+  return res.json();
+}
+
+export default async function PostsPage() {
+  const posts = await getPosts(); // 直接await
+
+  return (
+    <div>
+      {posts.map(post => (
+        <article key={post.id}>{post.title}</article>
+      ))}
+    </div>
+  );
+}
+```
+
+### 缓存控制策略
+
+| 缓存策略 | 配置选项 | 等同于旧版 | 使用场景 |
+|---------|---------|-----------|----------|
+| 完全缓存 | `cache: 'force-cache'` | getStaticProps | 静态内容 |
+| 不缓存 | `cache: 'no-store'` | getServerSideProps | 动态内容 |
+| 定时重新验证 | `next: { revalidate: 60 }` | ISR (增量静态再生) | 定期更新的内容 |
+
+### 并行数据获取
+
+```typescript
+// src/app/dashboard/page.tsx - 示例：仪表盘
+async function getUser() {
+  const res = await fetch('https://api.example.com/user');
+  return res.json();
+}
+
+async function getStats() {
+  const res = await fetch('https://api.example.com/stats');
+  return res.json();
+}
+
+export default async function Dashboard() {
+  // 并行获取多个数据源
+  const [user, stats] = await Promise.all([
+    getUser(),
+    getStats()
+  ]);
+
+  return (
+    <div>
+      <h1>Welcome, {user.name}</h1>
+      <p>Total Views: {stats.views}</p>
+    </div>
+  );
+}
+```
+
+### 客户端组件中的数据获取
+
+**使用场景**: 需要用户交互后获取数据
+
+```typescript
+// src/app/search.tsx - 示例：搜索组件
+"use client";
+
+import { useState, useEffect } from "react";
+
+export default function Search() {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+
+  useEffect(() => {
+    if (query) {
+      fetch(`/api/search?q=${query}`)
+        .then(res => res.json())
+        .then(data => setResults(data));
+    }
+  }, [query]);
+
+  return (
+    <div>
+      <input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {results.map(item => <div key={item.id}>{item.title}</div>)}
+    </div>
+  );
+}
+```
+
+### 数据获取最佳实践
+
+1. **优先使用服务端组件获取数据**: 更快、更安全
+2. **客户端数据获取用于交互场景**: 搜索、筛选、分页等
+3. **使用缓存策略优化性能**: 根据内容更新频率选择合适的缓存
+4. **错误处理**: 使用 `error.tsx` 处理数据获取错误
+
+## 开发工作流实践
+
+### 日常开发命令
+
+**文件路径**: `package.json` - scripts 部分
+
+| 命令 | 作用 | 使用场景 |
+|------|------|----------|
+| `npm run dev` | 启动开发服务器 (端口3000) | 日常开发 |
+| `npm run build` | 生产环境构建 | 部署前构建 |
+| `npm run start` | 启动生产服务器 | 本地预览生产版本 |
+| `npm run lint` | 运行ESLint检查 | 代码质量检查 |
+
+### 开发工作流程
+
+#### 1. 启动开发环境
+```bash
+# 在项目根目录执行
+npm run dev
+```
+**特点**:
+- 热重载: 代码修改后自动刷新浏览器
+- 快速刷新: 保留组件状态
+- 错误提示: 浏览器中显示详细错误信息
+- 访问地址: http://localhost:3000
+
+#### 2. 开发新功能
+```bash
+# 典型开发流程
+1. 在 src/app/ 目录创建新的路由文件夹
+2. 添加 page.tsx 定义页面
+3. (可选) 添加 layout.tsx 定义布局
+4. (可选) 添加 loading.tsx 定义加载状态
+5. (可选) 添加 error.tsx 定义错误处理
+```
+
+**文件系统路由示例**:
+```
+src/app/
+├── page.tsx              → 访问路径: /
+├── about/
+│   └── page.tsx          → 访问路径: /about
+├── blog/
+│   ├── page.tsx          → 访问路径: /blog
+│   └── [slug]/
+│       └── page.tsx      → 访问路径: /blog/任意参数
+```
+
+#### 3. 代码质量检查
+```bash
+# 运行ESLint检查
+npm run lint
+
+# 如果有错误，修复后再提交代码
+```
+
+#### 4. 构建和部署
+```bash
+# 构建生产版本
+npm run build
+
+# 本地预览生产版本
+npm run start
+```
+
+**构建输出说明**:
+- `.next/` 目录包含构建产物
+- 自动进行代码分割和优化
+- 生成静态HTML和优化的JavaScript
+
+### 开发环境配置
+
+**TypeScript配置**: `tsconfig.json`
+- 路径别名: `@/*` 映射到 `./src/*`
+- 使用示例: `import Component from '@/components/Component'`
+
+**环境变量配置**:
+```bash
+# 创建 .env.local 文件（如需要）
+NEXT_PUBLIC_API_URL=https://api.example.com  # 客户端可访问
+DATABASE_URL=postgresql://...                 # 仅服务端可访问
+```
+
+### 调试技巧
+
+#### 1. 查看编译错误
+- 终端显示构建错误
+- 浏览器显示运行时错误覆盖层
+
+#### 2. 区分服务端/客户端日志
+```typescript
+// 服务端组件
+console.log("这条日志在终端显示");
+
+// 客户端组件
+"use client";
+console.log("这条日志在浏览器控制台显示");
+```
+
+#### 3. 性能分析
+```bash
+# 启动时显示构建分析
+npm run build
+
+# 查看各页面的大小和加载时间
+```
+
+### 常见问题和解决方案
+
+#### 问题1: 端口3000已被占用
+```bash
+# 使用不同端口启动
+PORT=3001 npm run dev
+```
+
+#### 问题2: 样式不生效
+- 检查 `globals.css` 是否在 `layout.tsx` 中导入
+- 检查 Tailwind 类名是否正确
+- 清除 `.next` 缓存: 删除 `.next/` 文件夹后重启
+
+#### 问题3: 类型错误
+```bash
+# 重新生成TypeScript类型
+rm -rf .next
+npm run dev
+```
+
+#### 问题4: "use client" 使用时机
+- 如果组件不需要交互，保持为服务端组件
+- 只在需要hooks、事件处理或浏览器API时添加 "use client"
+
+### 文件监视和自动重载
+
+开发服务器会自动监视以下文件变化：
+- `src/app/**/*.tsx` - 页面和布局组件
+- `src/app/globals.css` - 全局样式
+- `next.config.ts` - Next.js配置（需重启）
+- `tsconfig.json` - TypeScript配置（需重启）
+- `tailwind.config.*` - Tailwind配置（需重启）
+
+### 生产部署建议
+
+1. **Vercel部署**（推荐）:
+   - 原生支持Next.js
+   - 自动CI/CD
+   - 全球CDN加速
+
+2. **Docker部署**:
+   ```bash
+   npm run build
+   npm run start  # 需要Node.js环境
+   ```
+
+3. **静态导出**（如果适用）:
+   ```javascript
+   // next.config.ts
+   const config: NextConfig = {
+     output: 'export', // 生成纯静态HTML
+   };
+   ```
+
 ## 组件关系图
 
 ### 整体架构关系图
