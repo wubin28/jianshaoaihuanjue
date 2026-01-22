@@ -61,22 +61,32 @@ export default function Home() {
 
   const callDeepSeekAPI = async (prompt: string): Promise<string> => {
     // 使用 Next.js 环境变量读取机制
-    // 在客户端组件中，只能访问以 NEXT_PUBLIC_ 为前缀的环境变量
+    // 支持双环境变量读取策略：
+    // 1. 优先读取 NEXT_PUBLIC_DEEPSEEK_API_KEY（本地开发环境）
+    // 2. 回退读取 DEEPSEEK_API_KEY（Vercel生产环境）
     const getApiKey = (): string => {
-      // 读取客户端可访问的环境变量（必须以 NEXT_PUBLIC_ 开头）
-      const apiKey = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY;
-      if (apiKey && apiKey !== 'your_api_key_here') {
-        return apiKey;
+      // 首先尝试读取 NEXT_PUBLIC_DEEPSEEK_API_KEY（本地开发环境）
+      const publicApiKey = process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY;
+      if (publicApiKey && publicApiKey !== 'your_api_key_here') {
+        return publicApiKey;
       }
       
-      // 如果环境变量未配置，返回空字符串
+      // 如果 NEXT_PUBLIC_ 前缀的变量不存在，尝试读取 DEEPSEEK_API_KEY（Vercel环境）
+      // 注意：在客户端组件中，非 NEXT_PUBLIC_ 前缀的变量可能为空
+      // 但在构建时会被替换为实际值
+      const vercelApiKey = process.env.DEEPSEEK_API_KEY;
+      if (vercelApiKey && vercelApiKey !== 'your_api_key_here') {
+        return vercelApiKey;
+      }
+      
+      // 如果两种方式都失败，返回空字符串
       return '';
     };
     
     const apiKey = getApiKey();
     
     if (!apiKey) {
-      throw new Error('DEEPSEEK_API_KEY 未配置。请检查：\n1. 项目根目录的 .env 文件中是否设置了 DEEPSEEK_API_KEY\n2. 系统环境变量中是否设置了 DEEPSEEK_API_KEY');
+      throw new Error('DEEPSEEK_API_KEY 未配置。请检查：\n1. 本地开发：项目根目录的 .env 文件中是否设置了 NEXT_PUBLIC_DEEPSEEK_API_KEY\n2. Vercel部署：Vercel环境变量中是否设置了 DEEPSEEK_API_KEY');
     }
 
     const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
